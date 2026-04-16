@@ -2,17 +2,39 @@ require('dotenv').config();
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-
 const connectDB = require('./db');
+
+
+
+const http = require('http');
+const { Server } = require('socket.io');
+
+const app = express();
+const server = http.createServer(app);
+
+
+
 const userController = require('./controllers/userController');
 const User = require('./models/User');
 const Post = require('./models/Post');
 const auth = require('./middlewares/auth');
 
-const app = express();
+
 
 // 🔹 Connect Database
 connectDB();
+
+
+// 🔹 Initialize Socket.io
+const io = new Server(server, {
+  cors: {
+    origin: ["http://127.0.0.1:5500", "http://localhost:5500"], // Allow Live Server
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+
 
 // 🔹 Middleware (Logger)
 app.use((req, res, next) => {
@@ -167,7 +189,62 @@ app.get('/api/posts', async (req, res) => {
 
 
 
+io.on('connection', (socket) => {
+  console.log(`User connected: ${socket.id}`);
+
+  // 🔹 Receive message
+  socket.on('message', (data) => {
+    console.log('Message received:', data);
+
+    // 🔥 Broadcast to all clients
+    io.emit('message_broadcast', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
+});
+
+
+io.on('connection', (socket) => {
+
+  // 🔹 Join Room
+  socket.on('join_activity', (activityId) => {
+    socket.join(activityId);
+    console.log(`User joined room: ${activityId}`);
+  });
+
+  // 🔹 Send message to room
+  socket.on('send_activity_chat', (data) => {
+    io.to(data.activityId).emit('new_chat', data.message);
+  });
+
+});
+
+
+
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth.token;
+
+    if (!token) {
+      return next(new Error("Unauthorized"));
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    socket.user = decoded;
+
+    next();
+
+  } catch (err) {
+    next(new Error("Unauthorized"));
+  }
+});
+
+
+
 // 🔹 START SERVER
-app.listen(PORT, () => {
+// 🔹 START SERVER
+server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

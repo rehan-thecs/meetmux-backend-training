@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Socket Chat Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        max-width: 600px;
+      }
+      #messages {
+        background: #f4f4f9;
+        padding: 10px;
+        min-height: 200px;
+        border: 1px solid #ccc;
+        list-style-type: none;
+        margin-top: 15px;
+      }
+      #messages li {
+        padding: 8px;
+        border-bottom: 1px solid #ddd;
+      }
+      .error {
+        color: red;
+        font-weight: bold;
+      }
+      .controls {
+        margin-top: 10px;
+      }
+      input {
+        padding: 8px;
+        width: 70%;
+      }
+      button {
+        padding: 8px 15px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>💬 Socket Chat Test</h2>
+
+    <p id="status">Status: <span style="color: gray">Connecting...</span></p>
+
+    <div class="controls">
+      <input id="msg" placeholder="Enter a message to broadcast..." />
+      <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <ul id="messages"></ul>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+
+    <script>
+      // ⚠️ CRITICAL STEP ⚠️
+      // Your backend now requires a JWT token to allow socket connections.
+      // 1. Open Postman
+      // 2. Send a POST request to http://localhost:5000/api/login with a valid email/password
+      // 3. Copy the "token" value from the response
+      // 4. Paste it inside the quotes below:
+      const TEST_TOKEN =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTEyYWRhZGRiNDJkMDQyNjA1NmI0YiIsImlhdCI6MTc3NjM2NDYzNiwiZXhwIjoxNzc2MzY4MjM2fQ.vhy9a1A3vBVwvLoQ13OICkRh1HrcxlOFAp4r9QlQVI4";
+
+      // ✅ Initialize socket on port 5000 and pass the token for authentication
+      const socket = io("http://localhost:3000", {
+        auth: {
+          token: TEST_TOKEN,
+        },
+      });
+
+      const statusEl = document.getElementById("status");
+      const messagesEl = document.getElementById("messages");
+
+      // ✅ Listen for incoming global broadcast messages
+      socket.on("message_broadcast", (data) => {
+        const li = document.createElement("li");
+        li.innerText = `📩 ${data}`;
+        messagesEl.appendChild(li);
+      });
+
+      // ✅ Send message function
+      function sendMessage() {
+        const input = document.getElementById("msg");
+        const msg = input.value.trim();
+
+        if (!msg) return; // Prevent empty messages
+
+        // Emit the message to the backend
+        socket.emit("message", msg);
+        input.value = ""; // Clear input field
+      }
+
+      // ==========================================
+      // 🐞 DEBUGGING & CONNECTION LOGS
+      // ==========================================
+
+      socket.on("connect", () => {
+        console.log("✅ Connected to server:", socket.id);
+        statusEl.innerHTML = `Status: <span style="color: green">✅ Connected (${socket.id})</span>`;
+      });
+
+      socket.on("disconnect", () => {
+        console.log("❌ Disconnected from server");
+        statusEl.innerHTML = `Status: <span style="color: orange">❌ Disconnected</span>`;
+      });
+
+      // If the token is invalid or missing, this will trigger
+      socket.on("connect_error", (err) => {
+        console.error("❌ Connection Error:", err.message);
+        statusEl.innerHTML = `Status: <span class="error">🚫 Auth Failed: ${err.message}</span>`;
+
+        if (err.message.includes("Unauthorized")) {
+          alert(
+            "Authentication failed! Did you remember to paste your JWT token into the TEST_TOKEN variable in the HTML code?",
+          );
+        }
+      });
+    </script>
+  </body>
+</html>
