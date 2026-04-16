@@ -6,6 +6,7 @@ const bcrypt = require('bcryptjs');
 const connectDB = require('./db');
 const userController = require('./controllers/userController');
 const User = require('./models/User');
+const Post = require('./models/Post');
 const auth = require('./middlewares/auth');
 
 const app = express();
@@ -58,34 +59,36 @@ app.get('/dashboard', auth, (req, res) => {
 
 // 🔹 LOGIN ROUTE
 app.post('/api/login', async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  // 1. Check user
-  const user = await User.findOne({ email });
-  if (!user) {
-    return res.status(400).json({ msg: "User does not exist" });
-  }
-
-  // 2. Compare password
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) {
-    return res.status(400).json({ msg: "Invalid credentials" });
-  }
-
-  // 3. Generate token
-  const token = jwt.sign(
-    { id: user._id },
-    process.env.JWT_SECRET,
-    { expiresIn: '1h' }
-  );
-
-  res.json({
-    token,
-    user: {
-      id: user._id,
-      username: user.username
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ msg: "User does not exist" });
     }
-  });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ msg: "Invalid credentials" });
+    }
+
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        username: user.username
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({ msg: "Server Error" });
+  }
 });
 
 
@@ -94,15 +97,15 @@ app.post('/api/login', async (req, res) => {
 // 🔹 DAY 4 + DAY 5 (SAVE USER)
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, email, age } = req.body;
+    const { username, email, password, age } = req.body;
 
-    if (!username || !email) {
+    if (!username || !email || !password) {
       return res.status(400).json({
-        error: "Username and Email are required"
+        error: "Username, Email and Password are required"
       });
     }
 
-    const newUser = new User({ username, email, age });
+    const newUser = new User({ username, email, password, age });
     const savedUser = await newUser.save();
 
     res.status(201).json(savedUser);
@@ -111,6 +114,42 @@ app.post('/api/register', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+
+
+
+//Day8-report.md
+// 🔹 CREATE POST
+app.post('/api/posts', auth, async (req, res) => {
+  try {
+    const newPost = new Post({
+      title: req.body.title,
+      content: req.body.content,
+      author: req.user.id   // 🔗 linking user
+    });
+
+    const post = await newPost.save();
+    res.json(post);
+
+  } catch (err) {
+    res.status(500).send('Server Error');
+  }
+});
+
+// 🔹 GET POSTS WITH AUTHOR DETAILS
+app.get('/api/posts', async (req, res) => {
+  try {
+    const posts = await Post.find()
+      .populate('author', ['username', 'email']);
+
+    res.json(posts);
+
+  } catch (err) {
+    res.status(500).send('Server Error');
+  }
+});
+
+
 
 // 🔹 START SERVER
 app.listen(PORT, () => {
