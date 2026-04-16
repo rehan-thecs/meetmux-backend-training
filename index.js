@@ -1,9 +1,12 @@
 require('dotenv').config();
 const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 
 const connectDB = require('./db');
 const userController = require('./controllers/userController');
 const User = require('./models/User');
+const auth = require('./middlewares/auth');
 
 const app = express();
 
@@ -43,6 +46,50 @@ app.get('/user', (req, res) => {
 
 // 🔹 CONTROLLER ROUTE
 app.get('/api/users', userController.getUsers);
+
+
+// Day6-report.md
+
+// 🔹 PRIVATE ROUTE
+app.get('/dashboard', auth, (req, res) => {
+  res.send("Welcome to the Private Dashboard");
+});
+
+
+// 🔹 LOGIN ROUTE
+app.post('/api/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  // 1. Check user
+  const user = await User.findOne({ email });
+  if (!user) {
+    return res.status(400).json({ msg: "User does not exist" });
+  }
+
+  // 2. Compare password
+  const isMatch = await bcrypt.compare(password, user.password);
+  if (!isMatch) {
+    return res.status(400).json({ msg: "Invalid credentials" });
+  }
+
+  // 3. Generate token
+  const token = jwt.sign(
+    { id: user._id },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
+
+  res.json({
+    token,
+    user: {
+      id: user._id,
+      username: user.username
+    }
+  });
+});
+
+
+
 
 // 🔹 DAY 4 + DAY 5 (SAVE USER)
 app.post('/api/register', async (req, res) => {
