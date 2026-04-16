@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const connectDB = require('./db');
 
-
+const { Worker } = require('worker_threads');
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -242,8 +242,50 @@ io.use((socket, next) => {
 });
 
 
+app.get('/api/block', (req, res) => {
+  let result = 0;
 
-// 🔹 START SERVER
+  for (let i = 0; i < 1_000_000_000; i++) {
+    result += i;
+  }
+
+  res.json({ result });
+});
+
+
+// 🔹 NORMAL ROUTE (TO TEST RESPONSIVENESS)
+app.get('/api/test', (req, res) => {
+  res.json({
+    message: "Server is responsive",
+    time: new Date().toISOString()
+  });
+});
+
+// 🔹 HEAVY TASK ROUTE (BACKGROUND WORKER)
+app.get('/api/heavy-task', (req, res) => {
+  console.log(`[MAIN] Request received at ${new Date().toISOString()}`);
+
+  const worker = new Worker('./worker.js', {
+    workerData: { iterations: 1_000_000_000 }
+  });
+
+  worker.on('message', (result) => {
+    console.log(`[MAIN] Worker completed at ${new Date().toISOString()}`);
+
+    res.json({
+      success: true,
+      result
+    });
+  });
+
+  worker.on('error', (err) => {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  });
+});
+
+
+
 // 🔹 START SERVER
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
