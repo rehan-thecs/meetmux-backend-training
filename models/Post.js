@@ -1,4 +1,3 @@
-// Day8-report.md
 const mongoose = require('mongoose');
 
 const PostSchema = new mongoose.Schema({
@@ -13,6 +12,14 @@ const PostSchema = new mongoose.Schema({
   },
 
   date: { type: Date, default: Date.now }
+}, {
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// 🔹 VIRTUAL FIELD
+PostSchema.virtual('contentLength').get(function () {
+  return this.content.length;
 });
 
 module.exports = mongoose.model('Post', PostSchema);
