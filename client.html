@@ -3,120 +3,137 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Socket Chat Test</title>
+
+    <title>MeetMux Socket Test</title>
+
     <style>
       body {
-        font-family: Arial, sans-serif;
+        font-family: Arial;
         padding: 20px;
-        max-width: 600px;
       }
-      #messages {
-        background: #f4f4f9;
-        padding: 10px;
-        min-height: 200px;
-        border: 1px solid #ccc;
-        list-style-type: none;
-        margin-top: 15px;
-      }
-      #messages li {
-        padding: 8px;
-        border-bottom: 1px solid #ddd;
-      }
-      .error {
-        color: red;
-        font-weight: bold;
-      }
-      .controls {
-        margin-top: 10px;
-      }
-      input {
-        padding: 8px;
-        width: 70%;
-      }
+
       button {
-        padding: 8px 15px;
+        padding: 10px 20px;
+        margin-right: 10px;
         cursor: pointer;
+      }
+
+      #logs {
+        margin-top: 20px;
+        padding: 15px;
+        border: 1px solid #ccc;
+        min-height: 200px;
+        background: #f5f5f5;
+      }
+
+      .log {
+        margin-bottom: 10px;
+        color: #222;
       }
     </style>
   </head>
+
   <body>
-    <h2>💬 Socket Chat Test</h2>
+    <h1>MeetMux Real-Time Test</h1>
 
-    <p id="status">Status: <span style="color: gray">Connecting...</span></p>
+    <button onclick="joinActivity()">Join Activity</button>
 
-    <div class="controls">
-      <input id="msg" placeholder="Enter a message to broadcast..." />
-      <button onclick="sendMessage()">Send</button>
-    </div>
+    <button onclick="joinRoom()">Join Event Room</button>
 
-    <ul id="messages"></ul>
+    <div id="logs"></div>
 
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <!-- Socket.io Client -->
+
+    <script src="http://localhost:3000/socket.io/socket.io.js"></script>
 
     <script>
-      // ⚠️ CRITICAL STEP ⚠️
-      // Your backend now requires a JWT token to allow socket connections.
-      // 1. Open Postman
-      // 2. Send a POST request to http://localhost:5000/api/login with a valid email/password
-      // 3. Copy the "token" value from the response
-      // 4. Paste it inside the quotes below:
-      const TEST_TOKEN =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZTEyYWRhZGRiNDJkMDQyNjA1NmI0YiIsImlhdCI6MTc3NjM2NDYzNiwiZXhwIjoxNzc2MzY4MjM2fQ.vhy9a1A3vBVwvLoQ13OICkRh1HrcxlOFAp4r9QlQVI4";
+      /*
+    |--------------------------------------------------------------------------
+    | Connect Socket
+    |--------------------------------------------------------------------------
+    */
 
-      // ✅ Initialize socket on port 5000 and pass the token for authentication
-      const socket = io("http://localhost:3000", {
-        auth: {
-          token: TEST_TOKEN,
-        },
-      });
+      const socket = io("http://localhost:3000");
 
-      const statusEl = document.getElementById("status");
-      const messagesEl = document.getElementById("messages");
+      const logs = document.getElementById("logs");
 
-      // ✅ Listen for incoming global broadcast messages
-      socket.on("message_broadcast", (data) => {
-        const li = document.createElement("li");
-        li.innerText = `📩 ${data}`;
-        messagesEl.appendChild(li);
-      });
+      /*
+    |--------------------------------------------------------------------------
+    | Add Log To Screen
+    |--------------------------------------------------------------------------
+    */
 
-      // ✅ Send message function
-      function sendMessage() {
-        const input = document.getElementById("msg");
-        const msg = input.value.trim();
+      function addLog(message) {
+        const div = document.createElement("div");
 
-        if (!msg) return; // Prevent empty messages
+        div.className = "log";
 
-        // Emit the message to the backend
-        socket.emit("message", msg);
-        input.value = ""; // Clear input field
+        div.innerText = message;
+
+        logs.appendChild(div);
       }
 
-      // ==========================================
-      // 🐞 DEBUGGING & CONNECTION LOGS
-      // ==========================================
+      /*
+    |--------------------------------------------------------------------------
+    | Connected
+    |--------------------------------------------------------------------------
+    */
 
       socket.on("connect", () => {
-        console.log("✅ Connected to server:", socket.id);
-        statusEl.innerHTML = `Status: <span style="color: green">✅ Connected (${socket.id})</span>`;
+        addLog(`Connected To Server: ${socket.id}`);
+
+        console.log("Connected:", socket.id);
       });
 
-      socket.on("disconnect", () => {
-        console.log("❌ Disconnected from server");
-        statusEl.innerHTML = `Status: <span style="color: orange">❌ Disconnected</span>`;
+      /*
+    |--------------------------------------------------------------------------
+    | Listen For Broadcast
+    |--------------------------------------------------------------------------
+    */
+
+      socket.on("new_participant", (data) => {
+        addLog(`Broadcast: ${data.message}`);
+
+        console.log(data);
       });
 
-      // If the token is invalid or missing, this will trigger
-      socket.on("connect_error", (err) => {
-        console.error("❌ Connection Error:", err.message);
-        statusEl.innerHTML = `Status: <span class="error">🚫 Auth Failed: ${err.message}</span>`;
+      /*
+    |--------------------------------------------------------------------------
+    | Listen For Room Notification
+    |--------------------------------------------------------------------------
+    */
 
-        if (err.message.includes("Unauthorized")) {
-          alert(
-            "Authentication failed! Did you remember to paste your JWT token into the TEST_TOKEN variable in the HTML code?",
-          );
-        }
+      socket.on("notification", (message) => {
+        addLog(`Room Notification: ${message}`);
+
+        console.log(message);
       });
+
+      /*
+    |--------------------------------------------------------------------------
+    | Join Activity
+    |--------------------------------------------------------------------------
+    */
+
+      function joinActivity() {
+        socket.emit("join_activity", {
+          activityName: "Chess Club",
+        });
+
+        addLog("You joined Chess Club");
+      }
+
+      /*
+    |--------------------------------------------------------------------------
+    | Join Room
+    |--------------------------------------------------------------------------
+    */
+
+      function joinRoom() {
+        socket.emit("subscribe_to_event", "event-101");
+
+        addLog("Subscribed to Event Room event-101");
+      }
     </script>
   </body>
 </html>

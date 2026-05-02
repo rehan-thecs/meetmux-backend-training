@@ -6,13 +6,13 @@ const { Worker } = require('worker_threads');
 const http = require('http');
 const { Server } = require('socket.io');
 const redis = require('redis');
+
 const {
   securityHeaders,
   loginLimiter,
   apiLimiter
 } = require('./middlewares/security');
 
-// Database & Controllers
 const connectDB = require('./db');
 const userController = require('./controllers/userController');
 const User = require('./models/User');
@@ -22,12 +22,10 @@ const auth = require('./middlewares/auth');
 const app = express();
 const server = http.createServer(app);
 
-// 🔹 Connect MongoDB
 connectDB();
 
-// 🔹 Connect Redis
 const client = redis.createClient({
-  url: 'redis://127.0.0.1:6379' // Explicitly bind to IPv4 to prevent ECONNREFUSED ::1 errors
+  url: 'redis://127.0.0.1:6379'
 });
 
 client.on('error', (err) => console.error('Redis Error:', err));
@@ -35,55 +33,39 @@ client.on('error', (err) => console.error('Redis Error:', err));
 (async () => {
   try {
     await client.connect();
-    console.log("✅ Redis Connected");
+    console.log('Redis Connected');
   } catch (err) {
-    console.error("❌ Redis Connection Failed:", err.message);
+    console.error('Redis Connection Failed:', err.message);
   }
 })();
 
-// 🔹 Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: ["http://127.0.0.1:5500", "http://localhost:5500"], // Allow Live Server
+    origin: ["http://127.0.0.1:5500", "http://localhost:5500"],
     methods: ["GET", "POST"],
     credentials: true
   }
 });
 
-// 🔹 Middleware (Logger & Body Parser)
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
+
 app.use(express.json());
-
-
 app.use(securityHeaders);
-app.use(express.json());
-
 app.use('/api', apiLimiter);
 
-
-
-// 🔹 ENV Variables
 const PORT = process.env.PORT || 5000;
 const API_KEY = process.env.API_KEY;
 
-
-
-
-
 app.get('/api/activities', async (req, res) => {
   try {
-
     const cacheKey = 'activities';
-
-
     const cachedData = await client.get(cacheKey);
 
     if (cachedData) {
-
-      return res.status(200).json({
+      return res.json({
         success: true,
         source: 'redis-cache',
         data: JSON.parse(cachedData)
@@ -92,87 +74,57 @@ app.get('/api/activities', async (req, res) => {
 
     const activities = await Post.find().limit(100);
 
+    await client.setEx(cacheKey, 60, JSON.stringify(activities));
 
-    await client.setEx(
-      cacheKey,
-      60,
-      JSON.stringify(activities)
-    );
-
-    return res.status(200).json({
+    res.json({
       success: true,
       source: 'mongodb',
       data: activities
     });
 
   } catch (error) {
-
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-
 app.get('/api/activities-no-cache', async (req, res) => {
-
   try {
-
     const activities = await Post.find().limit(100);
 
-    return res.status(200).json({
+    res.json({
       success: true,
       source: 'mongodb-only',
       data: activities
     });
 
   } catch (error) {
-
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
-
-
-
-// ==========================================
-// SOCKET.IO LOGIC
-// ==========================================
-
-// 1. Socket Middleware MUST come before the connection event
 io.use((socket, next) => {
   try {
     const token = socket.handshake.auth.token;
-    if (!token) {
-      return next(new Error("Unauthorized"));
-    }
+    if (!token) return next(new Error("Unauthorized"));
+
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.user = decoded;
     next();
-  } catch (err) {
+
+  } catch {
     next(new Error("Unauthorized"));
   }
 });
 
-
-// 2. Single Connection Block
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id} (User ID: ${socket.user?.id})`);
+  console.log(`User connected: ${socket.id}`);
 
-  // General Broadcast Message
   socket.on('message', (data) => {
-    console.log('Message received:', data);
     io.emit('message_broadcast', data);
   });
 
-  // Room / Activity Logic
   socket.on('join_activity', (activityId) => {
     socket.join(activityId);
-    console.log(`User joined room: ${activityId}`);
   });
 
   socket.on('send_activity_chat', (data) => {
@@ -180,258 +132,153 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log(`User disconnected: ${socket.id}`);
   });
 });
 
-// ==========================================
-// REST API ROUTES
-// ==========================================
-
-// Status & Basic Routes
 app.get('/status', (req, res) => {
-  res.json({ message: "System Online", port: PORT, apiKey: API_KEY ? "Loaded" : "Missing" });
+  res.json({
+    message: "System Online",
+    port: PORT,
+    apiKey: API_KEY ? "Loaded" : "Missing"
+  });
 });
 
 app.get('/about', (req, res) => {
-  res.send('Backend running successfully');
+  res.send('Backend running');
 });
 
-app.get('/user', (req, res) => {
-  res.json({ name: "John", role: "Developer" });
-});
-
-// User & Auth Routes
 app.get('/api/users', userController.getUsers);
 
 app.get('/dashboard', auth, (req, res) => {
-  res.send("Welcome to the Private Dashboard");
+  res.send("Private Dashboard");
 });
 
 app.post('/api/register', async (req, res) => {
   try {
     const { username, email, password, age } = req.body;
+
     if (!username || !email || !password) {
-      return res.status(400).json({ error: "Username, Email and Password are required" });
+      return res.status(400).json({ error: "All fields required" });
     }
+
     const newUser = new User({ username, email, password, age });
     const savedUser = await newUser.save();
+
     res.status(201).json(savedUser);
+
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 });
 
-
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(400).json({ msg: "User does not exist" });
     }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(400).json({ msg: "Invalid credentials" });
     }
+
     const token = jwt.sign(
       { id: user._id },
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
-    res.json({ token, user: { id: user._id, username: user.username } });
-  } catch (err) {
+
+    res.json({
+      token,
+      user: { id: user._id, username: user.username }
+    });
+
+  } catch {
     res.status(500).json({ msg: "Server Error" });
   }
 });
 
-// Post Routes
 app.post('/api/posts', auth, async (req, res) => {
   try {
-    const newPost = new Post({
+    const post = await new Post({
       title: req.body.title,
       content: req.body.content,
       author: req.user.id
-    });
-    const post = await newPost.save();
+    }).save();
+
     res.json(post);
-  } catch (err) {
+
+  } catch {
     res.status(500).send('Server Error');
   }
 });
 
 app.get('/api/posts/:id', async (req, res) => {
-  const { id } = req.params;
   try {
     const start = Date.now();
+    const cached = await client.get(req.params.id);
 
-    // 1. Check Redis
-    const cachedPost = await client.get(id);
-    if (cachedPost) {
-      console.log("⚡ Cache Hit");
+    if (cached) {
       return res.json({
         source: "Redis",
         time: `${Date.now() - start} ms`,
-        data: JSON.parse(cachedPost)
+        data: JSON.parse(cached)
       });
     }
 
-    // 2. Fetch from DB
-    const post = await Post.findById(id);
-    if (!post) {
-      return res.status(404).send("Post not found");
-    }
+    const post = await Post.findById(req.params.id);
+    if (!post) return res.status(404).send("Not found");
 
-    // 3. Save to Redis (TTL = 1 hour)
-    await client.setEx(id, 3600, JSON.stringify(post));
-    console.log("🐢 Cache Miss");
+    await client.setEx(req.params.id, 3600, JSON.stringify(post));
 
     res.json({
       source: "MongoDB",
       time: `${Date.now() - start} ms`,
       data: post
     });
-  } catch (err) {
+
+  } catch {
     res.status(500).send("Server Error");
   }
 });
 
 app.put('/api/posts/:id', async (req, res) => {
   try {
-    const updatedPost = await Post.findByIdAndUpdate(
+    const updated = await Post.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true }
     );
-    // ❗ Delete cache on update
+
     await client.del(req.params.id);
-    console.log("🧹 Cache Cleared");
-    res.json(updatedPost);
-  } catch (err) {
+
+    res.json(updated);
+
+  } catch {
     res.status(500).send("Server Error");
   }
 });
 
-// Performance Test Routes
-app.get('/api/block', (req, res) => {
-  let result = 0;
-  for (let i = 0; i < 1_000_000_000; i++) result += i;
-  res.json({ result });
-});
-
 app.get('/api/test', (req, res) => {
-  res.json({ message: "Server is responsive", time: new Date().toISOString() });
+  res.json({ message: "Server responsive" });
 });
 
-// app.get('/api/heavy-task', (req, res) => {
-//   console.log(`[MAIN] Request received at ${new Date().toISOString()}`);
-  
-//   // Ensure you have a worker.js file in your root directory!
-//   const worker = new Worker('./worker.js', {
-//     workerData: { iterations: 1_000_000_000 }
-//   });
+app.get('/api/heavy-task', (req, res) => {
+  const worker = new Worker('./worker.js', { workerData: 40 });
 
-//   worker.on('message', (result) => {
-//     console.log(`[MAIN] Worker completed at ${new Date().toISOString()}`);
-//     res.json({ success: true, result });
-//   });
+  worker.on('message', (data) => {
+    res.json({ success: true, data });
+  });
 
-//   worker.on('error', (err) => {
-//     console.error(err);
-//     res.status(500).json({ error: err.message });
-//   });
-// });
-
-
-
-/*
-|--------------------------------------------------------------------------
-| Worker Thread API
-|--------------------------------------------------------------------------
-| Heavy CPU Task Without Blocking Event Loop
-*/
-
-app.get('/api/heavy-task', async (req, res) => {
-
-  try {
-
-    console.log('Main Thread Started');
-
-    /*
-    |--------------------------------------------------------------------------
-    | Create Worker Thread
-    |--------------------------------------------------------------------------
-    */
-
-    const worker = new Worker('./worker.js', {
-      workerData: 40
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | Receive Result From Worker
-    |--------------------------------------------------------------------------
-    */
-
-    worker.on('message', (data) => {
-
-      console.log('Worker Calculation Completed');
-
-      return res.status(200).json({
-        success: true,
-        message: 'Heavy calculation completed',
-        data
-      });
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | Handle Worker Errors
-    |--------------------------------------------------------------------------
-    */
-
-    worker.on('error', (error) => {
-
-      return res.status(500).json({
-        success: false,
-        message: error.message
-      });
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | Worker Exit
-    |--------------------------------------------------------------------------
-    */
-
-    worker.on('exit', (code) => {
-
-      if (code !== 0) {
-
-        console.log(`Worker stopped with exit code ${code}`);
-      }
-    });
-
-    /*
-    |--------------------------------------------------------------------------
-    | Main Thread Remains Responsive
-    |--------------------------------------------------------------------------
-    */
-
-    console.log(
-      'Main Thread Is Free To Handle Other Requests'
-    );
-
-  } catch (error) {
-
-    return res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
+  worker.on('error', (err) => {
+    res.status(500).json({ error: err.message });
+  });
 });
 
-// 🔹 START SERVER
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
