@@ -19,8 +19,14 @@ const User = require('./models/User');
 const Post = require('./models/Post');
 const auth = require('./middlewares/auth');
 
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./swagger_config');
+const activityRoutes = require('./routes/activityRoutes');
+
 const app = express();
 const server = http.createServer(app);
+
+// index.js (relevant connection section)
 
 connectDB();
 
@@ -30,16 +36,20 @@ const client = redis.createClient({
 
 client.on('error', (err) => console.error('Redis Error:', err));
 
-(async () => {
-  try {
-    await client.connect();
-    console.log('Redis Connected');
-  } catch (err) {
-    console.error('Redis Connection Failed:', err.message);
-  }
-})();
+// Prevent Redis from connecting and hanging during Jest tests
+if (process.env.NODE_ENV !== 'test') {
+  (async () => {
+    try {
+      await client.connect();
+      console.log('Redis Connected');
+    } catch (err) {
+      console.error('Redis Connection Failed:', err.message);
+    }
+  })();
+}
 
 const io = new Server(server, {
+// ... rest of your index.js stays exactly the same
   cors: {
     origin: ["http://127.0.0.1:5500", "http://localhost:5500"],
     methods: ["GET", "POST"],
@@ -55,6 +65,17 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(securityHeaders);
 app.use('/api', apiLimiter);
+
+
+app.use(
+  '/api-docs',
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec)
+);
+
+app.use('/api', activityRoutes);
+
+
 
 const PORT = process.env.PORT || 5000;
 const API_KEY = process.env.API_KEY;
@@ -279,6 +300,10 @@ app.get('/api/heavy-task', (req, res) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = { app, server };
