@@ -72,6 +72,73 @@ const API_KEY = process.env.API_KEY;
 
 
 
+
+app.get('/api/activities', async (req, res) => {
+  try {
+
+    const cacheKey = 'activities';
+
+
+    const cachedData = await client.get(cacheKey);
+
+    if (cachedData) {
+
+      return res.status(200).json({
+        success: true,
+        source: 'redis-cache',
+        data: JSON.parse(cachedData)
+      });
+    }
+
+    const activities = await Post.find().limit(100);
+
+
+    await client.setEx(
+      cacheKey,
+      60,
+      JSON.stringify(activities)
+    );
+
+    return res.status(200).json({
+      success: true,
+      source: 'mongodb',
+      data: activities
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+
+app.get('/api/activities-no-cache', async (req, res) => {
+
+  try {
+
+    const activities = await Post.find().limit(100);
+
+    return res.status(200).json({
+      success: true,
+      source: 'mongodb-only',
+      data: activities
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+
+
+
 // ==========================================
 // SOCKET.IO LOGIC
 // ==========================================
@@ -120,9 +187,6 @@ io.on('connection', (socket) => {
 // ==========================================
 // REST API ROUTES
 // ==========================================
-
-
-
 
 // Status & Basic Routes
 app.get('/status', (req, res) => {
