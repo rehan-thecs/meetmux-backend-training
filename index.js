@@ -323,23 +323,112 @@ app.get('/api/test', (req, res) => {
   res.json({ message: "Server is responsive", time: new Date().toISOString() });
 });
 
-app.get('/api/heavy-task', (req, res) => {
-  console.log(`[MAIN] Request received at ${new Date().toISOString()}`);
+// app.get('/api/heavy-task', (req, res) => {
+//   console.log(`[MAIN] Request received at ${new Date().toISOString()}`);
   
-  // Ensure you have a worker.js file in your root directory!
-  const worker = new Worker('./worker.js', {
-    workerData: { iterations: 1_000_000_000 }
-  });
+//   // Ensure you have a worker.js file in your root directory!
+//   const worker = new Worker('./worker.js', {
+//     workerData: { iterations: 1_000_000_000 }
+//   });
 
-  worker.on('message', (result) => {
-    console.log(`[MAIN] Worker completed at ${new Date().toISOString()}`);
-    res.json({ success: true, result });
-  });
+//   worker.on('message', (result) => {
+//     console.log(`[MAIN] Worker completed at ${new Date().toISOString()}`);
+//     res.json({ success: true, result });
+//   });
 
-  worker.on('error', (err) => {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  });
+//   worker.on('error', (err) => {
+//     console.error(err);
+//     res.status(500).json({ error: err.message });
+//   });
+// });
+
+
+
+/*
+|--------------------------------------------------------------------------
+| Worker Thread API
+|--------------------------------------------------------------------------
+| Heavy CPU Task Without Blocking Event Loop
+*/
+
+app.get('/api/heavy-task', async (req, res) => {
+
+  try {
+
+    console.log('Main Thread Started');
+
+    /*
+    |--------------------------------------------------------------------------
+    | Create Worker Thread
+    |--------------------------------------------------------------------------
+    */
+
+    const worker = new Worker('./worker.js', {
+      workerData: 40
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Receive Result From Worker
+    |--------------------------------------------------------------------------
+    */
+
+    worker.on('message', (data) => {
+
+      console.log('Worker Calculation Completed');
+
+      return res.status(200).json({
+        success: true,
+        message: 'Heavy calculation completed',
+        data
+      });
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Handle Worker Errors
+    |--------------------------------------------------------------------------
+    */
+
+    worker.on('error', (error) => {
+
+      return res.status(500).json({
+        success: false,
+        message: error.message
+      });
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Worker Exit
+    |--------------------------------------------------------------------------
+    */
+
+    worker.on('exit', (code) => {
+
+      if (code !== 0) {
+
+        console.log(`Worker stopped with exit code ${code}`);
+      }
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Main Thread Remains Responsive
+    |--------------------------------------------------------------------------
+    */
+
+    console.log(
+      'Main Thread Is Free To Handle Other Requests'
+    );
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
 });
 
 // 🔹 START SERVER
