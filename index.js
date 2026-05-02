@@ -6,6 +6,11 @@ const { Worker } = require('worker_threads');
 const http = require('http');
 const { Server } = require('socket.io');
 const redis = require('redis');
+const {
+  securityHeaders,
+  loginLimiter,
+  apiLimiter
+} = require('./middlewares/security');
 
 // Database & Controllers
 const connectDB = require('./db');
@@ -52,9 +57,20 @@ app.use((req, res, next) => {
 });
 app.use(express.json());
 
+
+app.use(securityHeaders);
+app.use(express.json());
+
+app.use('/api', apiLimiter);
+
+
+
 // 🔹 ENV Variables
 const PORT = process.env.PORT || 5000;
 const API_KEY = process.env.API_KEY;
+
+
+
 
 // ==========================================
 // SOCKET.IO LOGIC
@@ -74,6 +90,7 @@ io.use((socket, next) => {
     next(new Error("Unauthorized"));
   }
 });
+
 
 // 2. Single Connection Block
 io.on('connection', (socket) => {
@@ -103,6 +120,9 @@ io.on('connection', (socket) => {
 // ==========================================
 // REST API ROUTES
 // ==========================================
+
+
+
 
 // Status & Basic Routes
 app.get('/status', (req, res) => {
@@ -137,6 +157,7 @@ app.post('/api/register', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
 
 app.post('/api/login', async (req, res) => {
   try {
